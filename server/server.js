@@ -55,9 +55,12 @@ const PORT = process.env.PORT || 3000;
 let currentExecution = null; // { child, runId }
 
 // --- Helper Functions ---
-function getAvailableScripts() {
+// --- Helper Functions ---
+function getAvailableScripts(region = 'ZA', suiteType = 'smoke') {
     // Scan the tests directory to find spec files
-    const testsDir = path.join(AUTOMATION_DIR, 'src/regions/ZA/tests/modules');
+    // local path mapping: smoke -> smoke, regression -> modules
+    const folderName = suiteType === 'regression' ? 'modules' : 'smoke';
+    const testsDir = path.join(AUTOMATION_DIR, `src/regions/${region}/tests/${folderName}`);
     const scripts = [];
 
     if (fs.existsSync(testsDir)) {
@@ -82,7 +85,8 @@ function getAvailableScripts() {
 
 // Get Metadata (Regions, Scripts)
 app.get('/api/metadata', (req, res) => {
-    const scripts = getAvailableScripts();
+    const { region, suiteType } = req.query;
+    const scripts = getAvailableScripts(region || 'ZA', suiteType || 'smoke');
     const regions = ['ZA', 'GH', 'MW', 'MZ', 'BW', 'TZ', 'NG', 'ZM'];
     res.json({ regions, scripts });
 });
@@ -168,7 +172,7 @@ app.post('/api/stop', (req, res) => {
 
 // Trigger Execution (refactored into function for reuse)
 function executePlaywrightTests(req, res) {
-    const { region, scripts, env } = req.body;
+    const { region, scripts, env, suiteType } = req.body;
 
     if (!region || !scripts || scripts.length === 0) {
         return res.status(400).json({ error: 'Region and at least one script are required.' });
@@ -176,9 +180,10 @@ function executePlaywrightTests(req, res) {
 
     const runId = Date.now().toString();
     const timestamp = new Date().toISOString();
+    const folderName = suiteType === 'regression' ? 'modules' : 'smoke';
 
     const scriptPaths = scripts.map(script => {
-        return `src/regions/${region}/tests/modules/${script}/${script}.spec.ts`;
+        return `src/regions/${region}/tests/${folderName}/${script}/${script}.spec.ts`;
     });
 
     const command = 'npx';
