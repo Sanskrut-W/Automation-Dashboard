@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
   Play, FileText, BarChart2, Clock, Monitor, CheckCircle, XCircle,
   Rocket, Activity, TrendingUp, Code2, Server, Filter, Download,
-  RefreshCw, Zap, AlertCircle, ChevronDown, X, Menu, MapPin, Power
+  RefreshCw, Zap, AlertCircle, ChevronDown, X, Menu, MapPin, Power, Printer, Camera
 } from 'lucide-react';
 import {
   BarChart, Bar, PieChart, Pie, LineChart, Line, Cell,
@@ -17,7 +17,7 @@ const REGIONS = ['ZA', 'GH', 'MW', 'MZ', 'BW', 'TZ', 'NG', 'ZM'];
 const ALL_SCRIPTS = [
   'buildABet', 'login', 'signUp', 'myBet', 'transactionHistory',
   'swipeBet', 'bookABet', 'footer', 'betslip', 'header',
-  'betInfluencer', 'betSaver'
+  'betInfluencer', 'betSaver', 'feeds'
 ];
 
 const SCRIPT_LABELS = {
@@ -33,7 +33,8 @@ const SCRIPT_LABELS = {
   'betslip': 'Betslip',
   'header': 'Header',
   'betInfluencer': 'Bet Influencer',
-  'betSaver': 'BetSaver'
+  'betSaver': 'BetSaver',
+  'feeds': 'Feeds'
 };
 
 function App() {
@@ -209,6 +210,13 @@ function App() {
       .catch(err => alert("Failed to start: " + err.message));
   };
 
+  const handlePrintReport = () => {
+    const iframe = document.getElementById('report-iframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.print();
+    }
+  };
+
   const getStats = () => {
     const total = history.length;
     const passed = history.filter(h => h.status === 'Passed').length;
@@ -344,13 +352,35 @@ function App() {
         )}
 
         {activeTab === 'reports' && (
-          <div className="flex-1 w-full h-full bg-white">
-            <iframe
-              key={reportKey}
-              src={`/report/index.html?t=${reportKey}`}
-              className="w-full h-full border-none"
-              title="Playwright Report"
-            ></iframe>
+          <div className="flex-1 w-full h-full bg-slate-950 relative flex flex-col">
+            <div className="bg-slate-900 border-b border-white/10 p-4 flex justify-between items-center shrink-0">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <FileText size={20} className="text-cyan-400" /> Playwright Test Report
+              </h2>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => window.open('/api/report/screenshots', '_blank')}
+                  className="px-4 py-2 bg-slate-800 border border-white/10 hover:bg-slate-700 text-white rounded-lg font-bold text-sm flex items-center gap-2 transition-all active:scale-95"
+                >
+                  <Camera size={16} className="text-red-400" /> Failed Screenshots
+                </button>
+                <button
+                  onClick={() => window.open('/api/report/pdf', '_blank')}
+                  className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:shadow-lg hover:shadow-cyan-500/30 text-white rounded-lg font-bold text-sm flex items-center gap-2 transition-all active:scale-95"
+                >
+                  <Download size={16} /> Save as PDF
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 relative w-full bg-white">
+              <iframe
+                id="report-iframe"
+                key={reportKey}
+                src={`/report/index.html?t=${reportKey}`}
+                className="w-full h-full border-none"
+                title="Playwright Report"
+              ></iframe>
+            </div>
           </div>
         )}
       </div>

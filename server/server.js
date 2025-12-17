@@ -274,91 +274,101 @@ function executePlaywrightTests(req, res) {
             return;
         }
 
-        const status = code === 0 ? 'Passed' : 'Failed';
-        const duration = Date.now() - parseInt(runId);
+        // Wait a moment for file system to settle (Windows fix)
+        setTimeout(() => {
+            const status = code === 0 ? 'Passed' : 'Failed';
+            const duration = Date.now() - parseInt(runId);
 
-        console.log(`[${runId}] Execution finished with code ${code}`);
+            console.log(`[${runId}] Execution finished with code ${code}`);
 
-        // Parse Playwright JSON output
-        let perScriptResults = [];
-        let totalTests = 0;
-        let totalPassed = 0;
-        let totalFailed = 0;
+            // Parse Playwright JSON output
+            let perScriptResults = [];
+            let totalTests = 0;
+            let totalPassed = 0;
+            let totalFailed = 0;
 
-        try {
-            // Read the JSON report file
-            const reportPath = path.join(AUTOMATION_DIR, `test-results-${runId}.json`);
+            try {
+                // Read the JSON report file
+                const reportPath = path.join(AUTOMATION_DIR, `test-results-${runId}.json`);
 
-            if (fs.existsSync(reportPath)) {
-                console.log(`[${runId}] Reading JSON report from ${reportPath}`);
-                const fileContent = fs.readFileSync(reportPath, 'utf8');
-                const jsonReport = JSON.parse(fileContent);
+                if (fs.existsSync(reportPath)) {
+                    console.log(`[${runId}] Reading JSON report from ${reportPath}`);
+                    const fileContent = fs.readFileSync(reportPath, 'utf8');
+                    const jsonReport = JSON.parse(fileContent);
 
-                // Parse test results from JSON
-                perScriptResults = parsePlaywrightJSON(jsonReport, scripts);
+                    // Parse test results from JSON
+                    perScriptResults = parsePlaywrightJSON(jsonReport, scripts);
 
-                // Calculate totals from parsed results
-                totalTests = perScriptResults.reduce((sum, s) => sum + s.totalTests, 0);
-                totalPassed = perScriptResults.reduce((sum, s) => sum + s.passed, 0);
-                totalFailed = perScriptResults.reduce((sum, s) => sum + s.failed, 0);
+                    // Calculate totals from parsed results
+                    totalTests = perScriptResults.reduce((sum, s) => sum + s.totalTests, 0);
+                    totalPassed = perScriptResults.reduce((sum, s) => sum + s.passed, 0);
+                    totalFailed = perScriptResults.reduce((sum, s) => sum + s.failed, 0);
 
-                // Cleanup report file
-                fs.unlinkSync(reportPath);
-            } else {
-                console.warn(`[${runId}] JSON report file not found at ${reportPath}, falling back to regex`);
-                // Fallback to regex parsing if JSON file not found
+                    // Cleanup report file
+                    // try { fs.unlinkSync(reportPath); } catch (e) { console.error("Error deleting report:", e); }
+                    console.log(`[DEBUG] Preserving JSON report for inspection: ${reportPath}`);
+                } else {
+                    console.warn(`[${runId}] JSON report file not found at ${reportPath}, falling back to regex`);
+                    // Fallback to regex parsing if JSON file not found
+                    perScriptResults = parsePlaywrightResults(outputLog, scripts);
+                    totalTests = perScriptResults.reduce((sum, s) => sum + s.totalTests, 0);
+                    totalPassed = perScriptResults.reduce((sum, s) => sum + s.passed, 0);
+                    totalFailed = perScriptResults.reduce((sum, s) => sum + s.failed, 0);
+                }
+            } catch (err) {
+                console.error(`[${runId}] Error parsing results:`, err);
+                // Fallback to regex parsing
                 perScriptResults = parsePlaywrightResults(outputLog, scripts);
                 totalTests = perScriptResults.reduce((sum, s) => sum + s.totalTests, 0);
                 totalPassed = perScriptResults.reduce((sum, s) => sum + s.passed, 0);
                 totalFailed = perScriptResults.reduce((sum, s) => sum + s.failed, 0);
             }
-        } catch (err) {
-            console.error(`[${runId}] Error parsing results:`, err);
-            // Fallback to regex parsing
-            perScriptResults = parsePlaywrightResults(outputLog, scripts);
-            totalTests = perScriptResults.reduce((sum, s) => sum + s.totalTests, 0);
-            totalPassed = perScriptResults.reduce((sum, s) => sum + s.passed, 0);
-            totalFailed = perScriptResults.reduce((sum, s) => sum + s.failed, 0);
-        }
 
-        const successRate = totalTests > 0 ? Math.round((totalPassed / totalTests) * 100) : 0;
+            const successRate = totalTests > 0 ? Math.round((totalPassed / totalTests) * 100) : 0;
 
-        const historyEntry = {
-            runId,
-            timestamp,
-            region,
-            scripts,
-            status,
-            duration,
-            triggeredBy: 'User',
-            config: { region, scripts, env }, // Store config for rerun
-            perScriptResults,
-            totalTests,
-            totalPassed,
-            totalFailed,
-            successRate
-        };
+            const historyEntry = {
+                runId,
+                timestamp,
+                region,
+                scripts,
+                status,
+                duration,
+                triggeredBy: 'User',
+                config: { region, scripts, env }, // Store config for rerun
+                perScriptResults,
+                totalTests,
+                totalPassed,
+                totalFailed,
+                successRate
+            };
 
-        addHistoryEntry(historyEntry);
+            addHistoryEntry(historyEntry);
 
-        // Clear current execution BEFORE emitting event
-        currentExecution = null;
+            // Clear current execution BEFORE emitting event
+            currentExecution = null;
 
-        console.log(`[${runId}] Execution complete. Emitting execution:end event`);
+            console.log(`[${runId}] Execution complete. Emitting execution:end event`);
 
-        // Emit execution end event
-        io.emit('execution:end', { runId, status, code, results: historyEntry });
+            // Emit execution end event
+            io.emit('execution:end', { runId, status, code, results: historyEntry });
 
-        console.log(`[${runId}] Event emitted successfully`);
+            console.log(`[${runId}] Event emitted successfully`);
+        }, 2000); // 2 second delay
     }
 }
 
 // Helper function to parse Playwright JSON output
 function parsePlaywrightJSON(jsonReport, scripts) {
     const results = [];
+    console.log('[DEBUG] --------------------------------------------------');
+    console.log(`[DEBUG] Parsing JSON. Target Scripts (${scripts.length}):`, JSON.stringify(scripts));
 
     // Navigate through Playwright's JSON structure
     const suites = jsonReport.suites || [];
+    console.log(`[DEBUG] JSON Root Suites count: ${suites.length}`);
+    if (suites.length > 0) {
+        console.log(`[DEBUG] First suite title: ${suites[0].title}, file: ${suites[0].file}`);
+    }
 
     for (const script of scripts) {
         let passed = 0;
@@ -366,12 +376,22 @@ function parsePlaywrightJSON(jsonReport, scripts) {
         let totalTests = 0;
         let duration = 0;
         let testCases = [];
+        let matchFound = false;
 
         // Find the suite for this script
-        const findTests = (suites) => {
-            for (const suite of suites) {
-                // Check if this suite matches the script
-                if (suite.file && suite.file.includes(script)) {
+        const findTests = (currentSuites, depth = 0) => {
+            const indent = '  '.repeat(depth);
+            for (const suite of currentSuites) {
+                // Determine if this suite matches
+                const file = suite.file || '';
+                const title = suite.title || '';
+
+                // Only log matches or high-level traversal to avoid massive spam
+                const isMatch = file && file.toLowerCase().includes(script.toLowerCase());
+
+                if (isMatch) {
+                    console.log(`[DEBUG] ${indent}MATCH FOUND! Script '${script}' matches File '${file}'`);
+                    matchFound = true;
                     // Process specs in this suite
                     if (suite.specs) {
                         for (const spec of suite.specs) {
@@ -399,12 +419,16 @@ function parsePlaywrightJSON(jsonReport, scripts) {
 
                 // Recursively search in nested suites
                 if (suite.suites && suite.suites.length > 0) {
-                    findTests(suite.suites);
+                    findTests(suite.suites, depth + 1);
                 }
             }
         };
 
         findTests(suites);
+
+        if (!matchFound) {
+            console.log(`[DEBUG] No match found for script '${script}' in any suite.`);
+        }
 
         results.push({
             scriptName: script,
@@ -415,6 +439,7 @@ function parsePlaywrightJSON(jsonReport, scripts) {
             testCases // Include individual test case details
         });
     }
+    console.log('[DEBUG] --------------------------------------------------');
 
     return results;
 }
@@ -449,10 +474,9 @@ function parsePlaywrightResults(output, scripts) {
         // If we couldn't parse, estimate based on overall status
         // This is a fallback - in production you'd want more robust parsing
         if (passed === 0 && failed === 0) {
-            // Estimate: assume each script has some tests
-            passed = 1; // Default assumption
-            failed = 0;
-            duration = Math.round(Math.random() * 5000) + 1000; // Random 1-6s
+            // Leave as 0 if parsing failed
+            // passed = 0; 
+            // failed = 0;
         }
 
         results.push({
@@ -468,6 +492,109 @@ function parsePlaywrightResults(output, scripts) {
 }
 
 app.post('/api/execute', executePlaywrightTests);
+
+// Download Report as PDF
+app.get('/api/report/pdf', async (req, res) => {
+    const reportUrl = `http://localhost:${PORT}/report/index.html`;
+    const outputPath = path.join(__dirname, `report-${Date.now()}.pdf`);
+
+    // Use our helper script
+    const child = spawn('node', ['print-pdf.js', reportUrl, outputPath], {
+        cwd: __dirname
+    });
+
+    child.stdout.on('data', (data) => console.log(`PDF: ${data}`));
+    child.stderr.on('data', (data) => console.error(`PDF Error: ${data}`));
+
+    child.on('close', (code) => {
+        if (code !== 0) {
+            return res.status(500).send('Failed to generate PDF');
+        }
+        const dateStr = new Date().toISOString().split('T')[0];
+        res.download(outputPath, `TestReport_${dateStr}.pdf`, (err) => {
+            if (err) console.error(err);
+            // Cleanup
+            fs.unlink(outputPath, () => { });
+        });
+    });
+});
+
+// Download Failed Screenshots as ZIP
+app.get('/api/report/screenshots', async (req, res) => {
+    const testResultsDir = path.join(AUTOMATION_DIR, 'test-results');
+    const tempDir = path.join(__dirname, 'temp-screenshots-' + Date.now());
+    const zipPath = tempDir + '.zip';
+
+    if (!fs.existsSync(testResultsDir)) {
+        return res.status(404).send('No test results found');
+    }
+
+    try {
+        fs.mkdirSync(tempDir);
+
+        // Logic: Find folders modified in the last 1 hour (or just take all relevant ones)
+        // Better: We rely on Playwright's behavior. We'll look for folders with matching timestamp or just grab all from the known latest run?
+        // Simple approach: Grab ALL png files from test-results. Playwright often cleans this folder or appends unique IDs.
+        // We'll traverse subdirectories.
+
+        const getFiles = (dir, files = []) => {
+            const fileList = fs.readdirSync(dir);
+            for (const file of fileList) {
+                const name = `${dir}/${file}`;
+                if (fs.statSync(name).isDirectory()) {
+                    getFiles(name, files);
+                } else {
+                    // Only include failed screenshots
+                    if (name.endsWith('.png') && name.includes('failed')) {
+                        files.push(name);
+                    }
+                }
+            }
+            return files;
+        };
+
+        const allScreenshots = getFiles(testResultsDir);
+
+        if (allScreenshots.length === 0) {
+            fs.rmdirSync(tempDir);
+            return res.status(404).json({ error: 'No screenshots found' });
+        }
+
+        // Copy files to temp dir flat or structured
+        allScreenshots.forEach((file, index) => {
+            // flattening name for easier access: testName-screenshot.png
+            const filename = path.basename(file);
+            const parentDir = path.basename(path.dirname(file));
+            const dest = path.join(tempDir, `${parentDir}-${filename}`);
+            fs.copyFileSync(file, dest);
+        });
+
+        // Zip using PowerShell (native Windows)
+        const psCommand = `Compress-Archive -Path "${tempDir}\\*" -DestinationPath "${zipPath}"`;
+        const child = spawn('powershell.exe', ['-Command', psCommand]);
+
+        child.on('close', (code) => {
+            if (code !== 0) {
+                // Cleanup
+                try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) { }
+                return res.status(500).send('Failed to zip screenshots');
+            }
+
+            const dateStr = new Date().toISOString().split('T')[0];
+            res.download(zipPath, `FailedScreenshots_${dateStr}.zip`, (err) => {
+                // Cleanup
+                try {
+                    fs.rmSync(tempDir, { recursive: true, force: true });
+                    fs.unlinkSync(zipPath);
+                } catch (e) { console.error("Cleanup error:", e); }
+            });
+        });
+
+    } catch (err) {
+        console.error("Screenshot error:", err);
+        res.status(500).send(err.message);
+    }
+});
 
 // Serve Playwright Reports
 app.use('/report', express.static(path.join(AUTOMATION_DIR, 'playwright-report')));
