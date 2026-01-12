@@ -30,6 +30,9 @@ app.use('/api', createApiRouter(io, AUTOMATION_DIR));
 // Serve Playwright Reports
 app.use('/report', express.static(path.join(AUTOMATION_DIR, 'playwright-report')));
 
+// Serve Automation Source (for Allure Reports)
+app.use('/source', express.static(path.join(AUTOMATION_DIR, 'src')));
+
 // Serve Frontend (Built React App from client2)
 app.use(express.static(path.join(__dirname, '../client2/dist')));
 
@@ -37,7 +40,7 @@ app.use(express.static(path.join(__dirname, '../client2/dist')));
 app.use((req, res) => {
     // Check if request is for API, ignore (let 404 propagate if not matched above)
     // Actually, if it didn't match /api above, it hits here.
-    if (req.path.startsWith('/api') || req.path.startsWith('/report')) {
+    if (req.path.startsWith('/api') || req.path.startsWith('/report') || req.path.startsWith('/source')) {
         return res.status(404).send('Not Found');
     }
     res.sendFile(path.join(__dirname, '../client2/dist/index.html'));

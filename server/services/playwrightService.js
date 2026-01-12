@@ -61,6 +61,17 @@ function executeTests(req, res, io, automationDir) {
 
     console.log(`[${runId}] Starting execution: ${command} ${args.join(' ')}`);
 
+    // CLEANUP: Clean allure-results before running new tests to prevent mixed data
+    const allureResultsDir = path.join(automationDir, `src/regions/${region}/reports/allure-results`);
+    if (fs.existsSync(allureResultsDir)) {
+        console.log(`[${runId}] Cleaning allure-results: ${allureResultsDir}`);
+        try {
+            fs.rmSync(allureResultsDir, { recursive: true, force: true });
+        } catch (e) {
+            console.error(`[${runId}] Failed to clean allure-results:`, e.message);
+        }
+    }
+
     const child = spawn(command, args, {
         cwd: automationDir,
         env: childEnv,
@@ -147,7 +158,7 @@ function executeTests(req, res, io, automationDir) {
 
             try {
                 // Read the JSON report file
-                const reportPath = path.join(automationDir, `test-results-${runId}.json`);
+                const reportPath = path.join(automationDir, `src/regions/${region}/reports/test-results-${runId}.json`);
 
                 if (fs.existsSync(reportPath)) {
                     console.log(`[${runId}] Reading JSON report from ${reportPath}`);
@@ -207,6 +218,25 @@ function executeTests(req, res, io, automationDir) {
 
             // Emit execution end event
             io.emit('execution:end', { runId, status, code, results: historyEntry });
+
+            // GENERATE REPORT: Generate Allure Report for this run
+            const allureReportDir = path.join(automationDir, `src/regions/${region}/reports/allure-reports/${runId}`);
+
+            console.log(`[${runId}] Generating Allure Report...`);
+            const allureCmd = `npx allure generate src/regions/${region}/reports/allure-results --clean -o src/regions/${region}/reports/allure-reports/${runId}`;
+
+            const reportGen = spawn(allureCmd, [], {
+                cwd: automationDir,
+                shell: true
+            });
+
+            reportGen.on('close', (genCode) => {
+                if (genCode === 0) {
+                    console.log(`[${runId}] Allure Report generated at: ${allureReportDir}`);
+                } else {
+                    console.error(`[${runId}] Failed to generate Allure Report (Code: ${genCode})`);
+                }
+            });
 
         }, 2000); // 2 second delay
     }
