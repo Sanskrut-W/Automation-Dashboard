@@ -14,36 +14,72 @@ const socket = io();
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [selectedRegions, setSelectedRegions] = useState(['ZA']);
+  const [config, setConfig] = useState(null); // Dynamic Config
+  const [inputValues, setInputValues] = useState({}); // Stores user selections for generic inputs
   const [selectedScripts, setSelectedScripts] = useState([]);
-  const [suiteType, setSuiteType] = useState('smoke'); // 'smoke' or 'regression'
+
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState([]);
   const [history, setHistory] = useState([]);
   const [currentRunId, setCurrentRunId] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
-  const [latestRun, setLatestRun] = useState(null); // Latest execution run for Statistics
-  const [currentViewingRun, setCurrentViewingRun] = useState(null); // Specific run being viewed
-  const [reportKey, setReportKey] = useState(Date.now()); // Force iframe refresh
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu state
+  const [latestRun, setLatestRun] = useState(null);
+  const [currentViewingRun, setCurrentViewingRun] = useState(null);
+  const [reportKey, setReportKey] = useState(Date.now());
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [scriptsList, setScriptsList] = useState([]);
   const logsEndRef = useRef(null);
 
-  // Fetch scripts when configuration changes
+  // 1. Fetch Configuration on Mount
   useEffect(() => {
+    axios.get('/api/config')
+      .then(res => {
+        const cfg = res.data;
+        setConfig(cfg);
+
+        // Initialize defaults
+        const initialValues = {};
+        if (cfg.inputs) {
+          cfg.inputs.forEach(input => {
+            initialValues[input.id] = input.default || '';
+            // If select, default to first option if no default provided
+            if (!initialValues[input.id] && input.type === 'select' && input.options.length > 0) {
+              const firstOpt = input.options[0];
+              initialValues[input.id] = typeof firstOpt === 'string' ? firstOpt : firstOpt.value;
+            }
+          });
+        }
+        setInputValues(initialValues);
+      })
+      .catch(err => console.error("Failed to load config", err));
+  }, []);
+
+  // 2. Fetch Scripts when inputs change
+  useEffect(() => {
+    if (!config) return;
     fetchScripts();
-  }, [suiteType, selectedRegions]);
+  }, [inputValues, config]);
 
   const fetchScripts = () => {
-    // Fetch available scripts based on region and suite type
-    const region = selectedRegions[0] || 'ZA';
-    axios.get(`/api/metadata?region=${region}&suiteType=${suiteType}`)
+    if (!config) return;
+
+    // Convert inputValues object to query string
+    const params = new URLSearchParams(inputValues).toString();
+
+    axios.get(`/api/scripts?${params}`)
       .then(res => {
         setScriptsList(res.data.scripts);
-        // Clear selection when suite checks
-        setSelectedScripts([]);
+        // Clear selection if scripts change? Maybe check overlap?
+        // setSelectedScripts([]); 
       })
       .catch(err => console.error("Failed to fetch scripts:", err));
+  };
+
+  const handleInputChange = (inputId, value) => {
+    setInputValues(prev => ({
+      ...prev,
+      [inputId]: value
+    }));
   };
 
   // Initial setup and socket listeners
@@ -66,11 +102,10 @@ function App() {
       console.log('📡 Received execution:end', data);
       setIsRunning(false);
       fetchHistory();
-      fetchLatestRun(); // Update latest run after execution
+      fetchLatestRun();
       if (data.results) {
-        setLatestRun(data.results); // Update immediately with results
+        setLatestRun(data.results);
       }
-      // Force report iframe to refresh with new report
       setReportKey(Date.now());
     });
 
@@ -102,7 +137,6 @@ function App() {
     axios.get('/api/runs/latest')
       .then(res => {
         setLatestRun(res.data);
-        // If not viewing a specific run, show latest
         if (!currentViewingRun) {
           setCurrentViewingRun(res.data);
         }
@@ -129,7 +163,7 @@ function App() {
     axios.post(`/api/runs/${runId}/rerun`)
       .then(res => {
         console.log('Rerun started:', res.data);
-        setActiveTab('dashboard'); // Switch to dashboard to see logs
+        setActiveTab('dashboard');
       })
       .catch(err => alert('Failed to rerun: ' + err.message));
   };
@@ -148,14 +182,8 @@ function App() {
       });
   };
 
-  const toggleRegion = (region) => {
-    setSelectedRegions(prev =>
-      prev.includes(region)
-        ? prev.filter(r => r !== region)
-        : [...prev, region]
-    );
-  };
-
+  // Legacy toggle helpers removed in favor of handleInputChange for generic inputs
+  // Script selection remains standard list
   const toggleScript = (script) => {
     setSelectedScripts(prev =>
       prev.includes(script)
@@ -164,8 +192,8 @@ function App() {
     );
   };
 
-  const selectAllScripts = () => {
-    setSelectedScripts(scriptsList);
+  const selectAllScripts = (list) => { // List passed or use scriptsList
+    setSelectedScripts(list || scriptsList);
   };
 
   const clearAllScripts = () => {
@@ -173,13 +201,14 @@ function App() {
   };
 
   const handleRun = () => {
-    if (selectedRegions.length === 0) return alert("Select at least one region");
+    // Validation?
+    // if (!inputValues.region) return alert("Select a region"); 
+    // Generic validation based on config? For now assume inputs are valid if they exist.
     if (selectedScripts.length === 0) return alert("Select at least one script");
 
     axios.post('/api/execute', {
-      region: selectedRegions[0], // For now, run first region
-      scripts: selectedScripts,
-      suiteType // Pass selected suite type
+      ...inputValues, // Spread all generic inputs (region, suite, etc)
+      scripts: selectedScripts
     })
       .then(res => console.log("Started", res.data))
       .catch(err => alert("Failed to start: " + err.message));
@@ -196,6 +225,9 @@ function App() {
   };
 
   const stats = getStats();
+
+  // Wait for config to load?
+  if (!config) return <div className="text-white flex items-center justify-center h-screen">Loading Configuration...</div>;
 
   const filteredHistory = filterStatus === 'all'
     ? history
@@ -240,9 +272,10 @@ function App() {
       <div className="relative flex-1 flex flex-col overflow-hidden z-10">
         {activeTab === 'dashboard' && (
           <Dashboard
-            selectedRegions={selectedRegions}
+            config={config}
+            inputValues={inputValues}
+            onInputChange={handleInputChange}
             selectedScripts={selectedScripts}
-            toggleRegion={toggleRegion}
             toggleScript={toggleScript}
             selectAllScripts={selectAllScripts}
             clearAllScripts={clearAllScripts}
@@ -252,8 +285,6 @@ function App() {
             logs={logs}
             logsEndRef={logsEndRef}
             stats={stats}
-            suiteType={suiteType}
-            setSuiteType={setSuiteType}
             scriptsList={scriptsList}
           />
         )}

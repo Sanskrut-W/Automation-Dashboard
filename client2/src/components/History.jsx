@@ -62,7 +62,9 @@ export default function History({ history, filterStatus, setFilterStatus, onView
                                             {run.region}
                                         </span>
                                     </td>
-                                    <td className="p-5 text-gray-400 text-sm truncate max-w-xs" title={run.scripts.join(', ')}>{run.scripts.join(', ')}</td>
+                                    <td className="p-5 text-gray-400 text-sm truncate max-w-xs" title={(run.scripts || run.config?.scripts || []).join(', ')}>
+                                        {(run.scripts || run.config?.scripts || []).join(', ')}
+                                    </td>
                                     <td className="p-5 text-gray-300 text-sm font-mono font-bold">{(run.duration / 1000).toFixed(1)}s</td>
                                     <td className="p-5 flex gap-2">
                                         <button

@@ -1,8 +1,8 @@
 import React from 'react';
-import { MapPin, Code2, CheckCircle, Play, Power, Monitor, Activity } from 'lucide-react';
+import { MapPin, Code2, CheckCircle, Play, Power, Monitor, Activity, Settings } from 'lucide-react';
 
-const REGIONS = ['ZA', 'GH', 'MW', 'MZ', 'BW', 'TZ', 'NG', 'ZM'];
 const SCRIPT_LABELS = {
+    // Legacy labels, can be moved to config later or kept as overrides
     'buildABet': 'Build A Bet',
     'login': 'Login',
     'signUp': 'Sign Up',
@@ -26,21 +26,58 @@ const StatsChip = ({ label, value, color }) => (
     </div>
 );
 
+// Generic Input Component
+const DynamicInput = ({ input, value, onChange }) => {
+    return (
+        <div className="bg-slate-900/50 backdrop-blur-xl rounded-xl p-3 border border-white/5">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                <Settings size={12} /> {input.label}
+            </h3>
+            <div className="flex flex-wrap gap-2">
+                {input.options.map((opt) => {
+                    const optValue = typeof opt === 'object' ? opt.value : opt;
+                    const optLabel = typeof opt === 'object' ? opt.label : opt;
+                    const isSelected = value === optValue;
+
+                    return (
+                        <button
+                            key={optValue}
+                            onClick={() => onChange(input.id, optValue)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${isSelected
+                                ? 'bg-cyan-500/10 border-cyan-500/50 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                                : 'bg-slate-800/50 border-white/5 text-gray-400 hover:border-white/20'
+                                }`}
+                        >
+                            {optLabel}
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
 export default function Dashboard({
-    selectedRegions, selectedScripts, toggleRegion, toggleScript,
+    config, inputValues, onInputChange,
+    selectedScripts, toggleScript,
     selectAllScripts, clearAllScripts, handleRun, handleStop, isRunning, logs, logsEndRef, stats,
-    suiteType, setSuiteType, scriptsList
+    scriptsList
 }) {
+    // Helper to calculate active inputs count
+    const activeInputsCount = Object.keys(inputValues).length;
+
     return (
         <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 gap-4 md:gap-6 overflow-hidden">
             {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
-                    <h2 className="text-xl md:text-2xl font-bold text-white mb-1">Test Execution</h2>
+                    <h2 className="text-xl md:text-2xl font-bold text-white mb-1">
+                        {config?.projectName || 'Test Execution'}
+                    </h2>
                     <p className="text-xs md:text-sm text-gray-400">Configure and run your automation tests</p>
                 </div>
                 <div className="flex items-center gap-2 md:gap-3">
-                    <StatsChip label="Regions" value={selectedRegions.length} color="cyan" />
+                    <StatsChip label="Inputs" value={activeInputsCount} color="cyan" />
                     <StatsChip label="Scripts" value={selectedScripts.length} color="teal" />
                 </div>
             </div>
@@ -50,26 +87,15 @@ export default function Dashboard({
                 {/* Configuration Panel (Left) */}
                 <div className="lg:col-span-5 flex flex-col gap-3 md:gap-4 overflow-y-auto lg:overflow-hidden">
 
-                    {/* Region Selector */}
-                    <div className="bg-slate-900/50 backdrop-blur-xl rounded-xl p-3 border border-white/5">
-                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                            <MapPin size={12} /> Target Region
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                            {REGIONS.map(region => (
-                                <button
-                                    key={region}
-                                    onClick={() => toggleRegion(region)}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${selectedRegions.includes(region)
-                                        ? 'bg-cyan-500/10 border-cyan-500/50 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
-                                        : 'bg-slate-800/50 border-white/5 text-gray-400 hover:border-white/20'
-                                        }`}
-                                >
-                                    {region}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                    {/* Dynamic Inputs */}
+                    {config?.inputs?.map(input => (
+                        <DynamicInput
+                            key={input.id}
+                            input={input}
+                            value={inputValues[input.id]}
+                            onChange={onInputChange}
+                        />
+                    ))}
 
                     {/* Script Selector */}
                     <div className="flex-1 bg-slate-900/50 backdrop-blur-xl rounded-xl p-3 border border-white/5 flex flex-col overflow-hidden">
@@ -94,21 +120,25 @@ export default function Dashboard({
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1.5">
-                            {scriptsList.map(script => (
-                                <button
-                                    key={script}
-                                    onClick={() => toggleScript(script)}
-                                    className={`w-full px-3 py-2 rounded-lg text-left font-medium text-xs transition-all flex items-center justify-between ${selectedScripts.includes(script)
-                                        ? 'bg-gradient-to-r from-cyan-500/20 to-teal-500/20 border border-cyan-500/40 text-white'
-                                        : 'bg-slate-800/30 text-gray-400 hover:bg-slate-700/50 border border-white/5'
-                                        }`}
-                                >
-                                    <span>{SCRIPT_LABELS[script] || script}</span>
-                                    {selectedScripts.includes(script) && (
-                                        <CheckCircle size={14} className="text-cyan-400" />
-                                    )}
-                                </button>
-                            ))}
+                            {scriptsList.length === 0 ? (
+                                <div className="text-gray-500 text-xs text-center py-4">No scripts found for this selection.</div>
+                            ) : (
+                                scriptsList.map(script => (
+                                    <button
+                                        key={script}
+                                        onClick={() => toggleScript(script)}
+                                        className={`w-full px-3 py-2 rounded-lg text-left font-medium text-xs transition-all flex items-center justify-between ${selectedScripts.includes(script)
+                                            ? 'bg-gradient-to-r from-cyan-500/20 to-teal-500/20 border border-cyan-500/40 text-white'
+                                            : 'bg-slate-800/30 text-gray-400 hover:bg-slate-700/50 border border-white/5'
+                                            }`}
+                                    >
+                                        <span>{SCRIPT_LABELS[script] || script}</span>
+                                        {selectedScripts.includes(script) && (
+                                            <CheckCircle size={14} className="text-cyan-400" />
+                                        )}
+                                    </button>
+                                ))
+                            )}
                         </div>
                     </div>
 
@@ -149,36 +179,8 @@ export default function Dashboard({
                     </div>
                 </div>
 
-                {/* Right Column: Suite Selector + Logs */}
+                {/* Right Column: Logs */}
                 <div className="lg:col-span-7 flex flex-col gap-3 md:gap-4 overflow-hidden">
-
-                    {/* Test Suite Selector (Moved Here) */}
-                    <div className="bg-slate-900/50 backdrop-blur-xl rounded-xl p-3 border border-white/5 flex items-center justify-between gap-4">
-                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
-                            <Monitor size={14} /> Test Suite
-                        </h3>
-                        <div className="flex-1 flex bg-slate-800/50 rounded-lg p-1 border border-white/5 max-w-sm">
-                            <button
-                                onClick={() => setSuiteType('smoke')}
-                                className={`flex-1 py-1 px-3 rounded-md text-xs font-bold transition-all ${suiteType === 'smoke'
-                                    ? 'bg-gradient-to-r from-cyan-500 to-teal-500 text-white shadow-lg'
-                                    : 'text-gray-400 hover:text-white'
-                                    }`}
-                            >
-                                Smoke
-                            </button>
-                            <button
-                                onClick={() => setSuiteType('regression')}
-                                className={`flex-1 py-1 px-3 rounded-md text-xs font-bold transition-all ${suiteType === 'regression'
-                                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
-                                    : 'text-gray-400 hover:text-white'
-                                    }`}
-                            >
-                                Regression
-                            </button>
-                        </div>
-                    </div>
-
                     {/* Logs Panel */}
                     <div className="flex-1 bg-slate-900/50 backdrop-blur-xl rounded-xl border border-white/5 overflow-hidden flex flex-col min-h-[300px]">
                         <div className="bg-slate-800/50 px-4 py-3 border-b border-white/5 flex justify-between items-center">

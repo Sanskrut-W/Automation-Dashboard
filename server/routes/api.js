@@ -1,5 +1,6 @@
 const express = require('express');
-const { getAvailableScripts, executeTests, stopExecution } = require('../services/playwrightService');
+const { getAvailableScripts, executeTests, stopExecution } = require('../services/automationService'); // CHANGED: Generic Service
+const { getConfig } = require('../services/configService'); // CHANGED: Config Access
 const { readHistory } = require('../config/db');
 const { generatePdfReport, downloadFailedScreenshots } = require('../services/fileService');
 
@@ -7,11 +8,41 @@ const { generatePdfReport, downloadFailedScreenshots } = require('../services/fi
 module.exports = function createApiRouter(io, automationDir) {
     const router = express.Router();
 
-    // -- Metadata --
+    // -- Configuration (NEW) --
+    // Frontend will call this first to know what inputs to render
+    router.get('/config', (req, res) => {
+        try {
+            res.json(getConfig());
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // -- Scripts (Dynamic) --
+    router.get('/scripts', (req, res) => {
+        // Receives query params like ?region=ZA&suite=smoke
+        // Passed directly to generic service
+        try {
+            const scripts = getAvailableScripts(req.query);
+            res.json({ scripts });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // -- Metadata (Legacy Support / Deprecated) --
+    // The frontend should eventually use /config + /scripts
     router.get('/metadata', (req, res) => {
         const { region, suiteType } = req.query;
-        const scripts = getAvailableScripts(automationDir, region || 'ZA', suiteType || 'smoke');
-        const regions = ['ZA', 'GH', 'MW', 'MZ', 'BW', 'TZ', 'NG', 'ZM'];
+        // Map legacy query to new generic inputs if possible, or just pass through
+        const scripts = getAvailableScripts({ region: region || 'ZA', suiteType: suiteType || 'smoke' });
+        // The old regions list is now in config, but for backward compat we return generic config input options?
+        // Let's just return what the old frontend expects for now BUT sourced from config?
+        // Actually simplest is to return empty regions to force migration or read from config if specific ID exists.
+        const config = getConfig();
+        const regionInput = config.inputs.find(i => i.id === 'region');
+        const regions = regionInput ? regionInput.options : [];
+
         res.json({ regions, scripts });
     });
 
@@ -38,7 +69,8 @@ module.exports = function createApiRouter(io, automationDir) {
 
     // -- Execution --
     router.post('/execute', (req, res) => {
-        executeTests(req, res, io, automationDir);
+        // req.body contains { region: 'ZA', suite: 'smoke', scripts: [] }
+        executeTests(req, res, io);
     });
 
     router.post('/stop', (req, res) => {
@@ -53,9 +85,10 @@ module.exports = function createApiRouter(io, automationDir) {
             return res.status(404).json({ error: 'Run not found' });
         }
 
-        const { region, scripts, env } = originalRun.config || { region: originalRun.region, scripts: originalRun.scripts, env: {} };
-        req.body = { region, scripts, env };
-        executeTests(req, res, io, automationDir);
+        // Pass the original configuration directly to executeTests
+        // logic should handle { region, scripts } etc in req.body
+        req.body = originalRun.config || {};
+        executeTests(req, res, io);
     });
 
     // -- Reports --

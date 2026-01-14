@@ -17,6 +17,16 @@ const io = new Server(server, {
 
 // --- Configuration ---
 const AUTOMATION_DIR = path.resolve(__dirname, '../../Betway-Automation');
+const { loadConfig } = require('./services/configService');
+
+// Load Config on Startup
+try {
+    loadConfig(AUTOMATION_DIR);
+} catch (e) {
+    console.error("CRITICAL: Failed to load dashboard.config.json", e);
+    process.exit(1);
+}
+
 const PORT = process.env.PORT || 3000;
 
 // --- Middleware ---
