@@ -2,12 +2,9 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-function generatePdfReport(req, res, port) {
+function generatePdfReport(req, res, port, region) {
     const reportUrl = `http://localhost:${port}/report/index.html`;
-    const outputPath = path.join(__dirname, `../../report-${Date.now()}.pdf`); // Save to server root temporarily? Or use temp dir.
-    // Actually server.js logical root was server directory. fileService is in server/services.
-    // So __dirname is server/services.
-    // We want to run print-pdf.js which is in server/
+    const outputPath = path.join(__dirname, `../../report-${Date.now()}.pdf`);
     const scriptPath = path.resolve(__dirname, '../print-pdf.js');
 
     // Adjust output path to be in server root for easy cleanup logic
@@ -25,7 +22,9 @@ function generatePdfReport(req, res, port) {
             return res.status(500).send('Failed to generate PDF');
         }
         const dateStr = new Date().toISOString().split('T')[0];
-        res.download(safeOutputPath, `TestReport_${dateStr}.pdf`, (err) => {
+        const fileName = region ? `TestReport_${region}_${dateStr}.pdf` : `TestReport_${dateStr}.pdf`;
+
+        res.download(safeOutputPath, fileName, (err) => {
             if (err) console.error(err);
             // Cleanup
             try { fs.unlinkSync(safeOutputPath); } catch (e) { }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileText, Camera, Download } from 'lucide-react';
 
-export default function Reports({ reportKey }) {
+export default function Reports({ reportKey, region }) {
     return (
         <div className="flex-1 w-full h-full bg-slate-950 relative flex flex-col">
             <div className="bg-slate-900 border-b border-white/10 p-4 flex justify-between items-center shrink-0">
@@ -16,7 +16,7 @@ export default function Reports({ reportKey }) {
                         <Camera size={16} className="text-red-400" /> Failed Screenshots
                     </button>
                     <button
-                        onClick={() => window.open('/api/report/pdf', '_blank')}
+                        onClick={() => window.open(region ? `/api/report/pdf?region=${region}` : '/api/report/pdf', '_blank')}
                         className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:shadow-lg hover:shadow-cyan-500/30 text-white rounded-lg font-bold text-sm flex items-center gap-2 transition-all active:scale-95"
                     >
                         <Download size={16} /> Save as PDF

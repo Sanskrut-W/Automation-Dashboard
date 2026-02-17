@@ -99,7 +99,8 @@ module.exports = function createApiRouter(io, automationDir) {
         // req.get('host') gives "localhost:3000"
         const host = req.get('host');
         const port = host.split(':')[1] || 3000;
-        generatePdfReport(req, res, port);
+        const region = req.query.region;
+        generatePdfReport(req, res, port, region);
     });
 
     router.get('/report/screenshots', (req, res) => {

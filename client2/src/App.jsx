@@ -308,7 +308,7 @@ function App() {
         )}
 
         {activeTab === 'reports' && (
-          <Reports reportKey={reportKey} />
+          <Reports reportKey={reportKey} region={inputValues.region} />
         )}
       </div>
     </div>

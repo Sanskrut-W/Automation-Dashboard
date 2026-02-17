@@ -136,7 +136,7 @@ function executeTests(req, res, io) {
         shell: true
     });
 
-    currentExecution = { child, runId };
+    currentExecution = { child, runId, startTime: Date.now() };
 
     res.json({ runId, status: 'started' });
     io.emit('execution:start', { runId, timestamp, ...inputs });
@@ -156,10 +156,14 @@ function executeTests(req, res, io) {
 
 function handleCompletion(code, runId, variables, io, automationDir, config, originalInputs) {
     if (!currentExecution || currentExecution.runId !== runId) return;
+
+    // Calculate Duration
+    const endTime = Date.now();
+    const duration = endTime - (currentExecution.startTime || endTime);
+
     currentExecution = null;
 
     const status = code === 0 ? 'Passed' : 'Failed';
-    const duration = 0;
 
     // Parse Results
     let perScriptResults = [];
