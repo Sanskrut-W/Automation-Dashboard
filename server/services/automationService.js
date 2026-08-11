@@ -51,6 +51,18 @@ function getAvailableScripts(inputs) {
             } catch (e) {
                 console.error(`Failed to read scripts from ${fullPath}`, e);
             }
+        } else if (discovery.grouping === 'file') {
+            const pattern = discovery.filePattern || '.spec.ts';
+            try {
+                const items = fs.readdirSync(fullPath);
+                items.forEach(item => {
+                    if (item.endsWith(pattern)) {
+                        scripts.push(item.slice(0, -pattern.length));
+                    }
+                });
+            } catch (e) {
+                console.error(`Failed to read scripts from ${fullPath}`, e);
+            }
         }
     } else {
         console.warn(`Script directory not found: ${fullPath}`);
@@ -108,7 +120,9 @@ function executeTests(req, res, io) {
     const allArgs = [...initialArgs, ...finalArgs];
 
     // 4. Prepare Env
-    const childEnv = { ...process.env };
+    // Force color off: the dashboard log panel renders raw text with no ANSI stripping,
+    // so a colored reporter would leak escape codes into the UI instead of just being cosmetic.
+    const childEnv = { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' };
     if (execution.env) {
         for (const [key, value] of Object.entries(execution.env)) {
             childEnv[key] = resolveTemplate(value, variables);
@@ -186,6 +200,7 @@ function handleCompletion(code, runId, variables, io, automationDir, config, ori
         runId,
         timestamp: new Date().toISOString(),
         status,
+        duration,
         config: originalInputs, // Store all inputs
         perScriptResults,
         totalTests,

@@ -100,7 +100,7 @@ module.exports = function createApiRouter(io, automationDir) {
         const host = req.get('host');
         const port = host.split(':')[1] || 3000;
         const region = req.query.region;
-        generatePdfReport(req, res, port, region);
+        generatePdfReport(req, res, port, region, automationDir);
     });
 
     router.get('/report/screenshots', (req, res) => {

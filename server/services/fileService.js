@@ -2,7 +2,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-function generatePdfReport(req, res, port, region) {
+function generatePdfReport(req, res, port, region, automationDir) {
     const reportUrl = `http://localhost:${port}/report/index.html`;
     const outputPath = path.join(__dirname, `../../report-${Date.now()}.pdf`);
     const scriptPath = path.resolve(__dirname, '../print-pdf.js');
@@ -10,7 +10,7 @@ function generatePdfReport(req, res, port, region) {
     // Adjust output path to be in server root for easy cleanup logic
     const safeOutputPath = path.resolve(__dirname, `../report-${Date.now()}.pdf`);
 
-    const child = spawn('node', [scriptPath, reportUrl, safeOutputPath], {
+    const child = spawn('node', [scriptPath, reportUrl, safeOutputPath, automationDir], {
         cwd: path.resolve(__dirname, '..') // Run from server root
     });
 

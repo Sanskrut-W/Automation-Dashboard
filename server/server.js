@@ -16,12 +16,15 @@ const io = new Server(server, {
 });
 
 // --- Configuration ---
-const AUTOMATION_DIR = path.resolve(__dirname, '../../Betway-Automation');
+const AUTOMATION_DIR = process.env.AUTOMATION_DIR
+    ? path.resolve(process.env.AUTOMATION_DIR)
+    : path.resolve(__dirname, '../../Pure-Vantage-Automation');
 const { loadConfig } = require('./services/configService');
 
 // Load Config on Startup
+let dashboardConfig;
 try {
-    loadConfig(AUTOMATION_DIR);
+    dashboardConfig = loadConfig(AUTOMATION_DIR);
 } catch (e) {
     console.error("CRITICAL: Failed to load dashboard.config.json", e);
     process.exit(1);
@@ -37,8 +40,9 @@ app.use(express.json());
 // Mount API routes, injecting dependencies (io, automationDir)
 app.use('/api', createApiRouter(io, AUTOMATION_DIR));
 
-// Serve Playwright Reports
-app.use('/report', express.static(path.join(AUTOMATION_DIR, 'playwright-report')));
+// Serve Playwright Reports (path is project-specific, e.g. "reports/playwright-report")
+const htmlReportDir = dashboardConfig.reporting?.htmlReportDir || 'playwright-report';
+app.use('/report', express.static(path.join(AUTOMATION_DIR, htmlReportDir)));
 
 // Serve Automation Source (for Allure Reports)
 app.use('/source', express.static(path.join(AUTOMATION_DIR, 'src')));

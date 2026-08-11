@@ -1,13 +1,21 @@
-const { chromium } = require('../../Betway-Automation/node_modules/playwright');
 const path = require('path');
 const fs = require('fs');
 
 (async () => {
     const reportUrl = process.argv[2];
     const outputPath = process.argv[3];
+    const automationDir = process.argv[4];
 
-    if (!reportUrl || !outputPath) {
-        console.error('Usage: node print-pdf.js <url> <output-path>');
+    if (!reportUrl || !outputPath || !automationDir) {
+        console.error('Usage: node print-pdf.js <url> <output-path> <automation-dir>');
+        process.exit(1);
+    }
+
+    let chromium;
+    try {
+        ({ chromium } = require(path.join(automationDir, 'node_modules', 'playwright')));
+    } catch (e) {
+        console.error(`Could not find 'playwright' installed in ${automationDir}: ${e.message}`);
         process.exit(1);
     }
 
