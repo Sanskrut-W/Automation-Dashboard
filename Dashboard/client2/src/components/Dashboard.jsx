@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, Code2, CheckCircle, Play, Power, Monitor, Activity, Globe } from 'lucide-react';
+import { MapPin, Code2, CheckCircle, XCircle, Play, Power, Monitor, Activity, Globe, Loader2, FolderOpen, MinusCircle } from 'lucide-react';
 
 const SCRIPT_LABELS = {
     'buildABet': 'Build A Bet',
@@ -43,12 +43,88 @@ const StatsChip = ({ label, value, color }) => (
     </div>
 );
 
+// One row per region in the queue: waiting -> running -> saving report -> done.
+function BatchProgress({ batch, theme }) {
+    if (!batch || !batch.regions || batch.regions.length === 0) return null;
+
+    const statusOf = (region) => {
+        const done = (batch.done || []).find(d => d.region === region);
+        if (done) return done;
+        if (!batch.finished && batch.current === region) {
+            return { region, status: batch.phase === 'report' ? 'Saving report' : 'Running' };
+        }
+        return { region, status: batch.finished ? 'Not run' : 'Queued' };
+    };
+
+    const completed = (batch.done || []).length;
+    const total = batch.total || batch.regions.length;
+    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    return (
+        <div className="bg-slate-900/50 backdrop-blur-xl rounded-xl p-3 border border-white/5">
+            <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                    <MapPin size={12} /> Region Queue — {completed}/{total}
+                </h3>
+                {batch.reportFolder && (
+                    <span
+                        className="text-[10px] text-gray-500 font-mono truncate max-w-[55%] flex items-center gap-1"
+                        title={`reports/${batch.reportFolder}`}
+                    >
+                        <FolderOpen size={11} /> {batch.reportFolder}
+                    </span>
+                )}
+            </div>
+
+            <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden mb-3">
+                <div
+                    className={`h-full bg-gradient-to-r ${theme.gradient} transition-all duration-500`}
+                    style={{ width: `${pct}%` }}
+                />
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+                {batch.regions.map(region => {
+                    const s = statusOf(region);
+                    const tone =
+                        s.status === 'Passed' ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
+                            : s.status === 'Failed' ? 'bg-red-500/10 border-red-500/40 text-red-400'
+                                : s.status === 'Skipped' || s.status === 'Not run' ? 'bg-slate-800/50 border-white/5 text-gray-500'
+                                    : s.status === 'Stopped' ? 'bg-amber-500/10 border-amber-500/40 text-amber-400'
+                                        : s.status === 'Queued' ? 'bg-slate-800/50 border-white/10 text-gray-400'
+                                            : `bg-${theme.accent}-500/10 border-${theme.accent}-500/50 text-${theme.accent}-400`;
+
+                    const icon =
+                        s.status === 'Passed' ? <CheckCircle size={11} />
+                            : s.status === 'Failed' ? <XCircle size={11} />
+                                : s.status === 'Skipped' || s.status === 'Not run' ? <MinusCircle size={11} />
+                                    : (s.status === 'Running' || s.status === 'Saving report')
+                                        ? <Loader2 size={11} className="animate-spin" />
+                                        : null;
+
+                    return (
+                        <span
+                            key={region}
+                            title={`${region} — ${s.status}${s.pdf ? ` (${s.pdf})` : ''}`}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 ${tone}`}
+                        >
+                            {icon}{region}
+                            {s.status === 'Saving report' && <span className="font-normal opacity-70">report…</span>}
+                        </span>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
 export default function Dashboard({
     selectedProject,
     selectedRegions, selectedEnv, setSelectedEnv,
     selectedScripts, toggleRegion, toggleScript,
+    selectAllRegions, clearAllRegions,
     selectAllScripts, clearAllScripts,
-    handleRun, handleStop, isRunning,
+    handleRun, handleStop, isRunning, batch,
     logs, logsEndRef, stats,
     suiteType, setSuiteType, scriptsList
 }) {
@@ -85,9 +161,25 @@ export default function Dashboard({
                     {/* Region Selector (regional projects) */}
                     {!isFlat && (
                         <div className="bg-slate-900/50 backdrop-blur-xl rounded-xl p-3 border border-white/5">
-                            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <MapPin size={12} /> Target Region
-                            </h3>
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                                    <MapPin size={12} /> Target Regions ({selectedRegions.length}/{regions.length})
+                                </h3>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={selectAllRegions}
+                                        className="px-2 py-1 rounded-md bg-cyan-500/20 text-cyan-400 text-[10px] font-bold hover:bg-cyan-500/30 transition-all"
+                                    >
+                                        All
+                                    </button>
+                                    <button
+                                        onClick={clearAllRegions}
+                                        className="px-2 py-1 rounded-md bg-red-500/20 text-red-400 text-[10px] font-bold hover:bg-red-500/30 transition-all"
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
                             <div className="flex flex-wrap gap-2">
                                 {regions.map(region => (
                                     <button
@@ -102,6 +194,12 @@ export default function Dashboard({
                                     </button>
                                 ))}
                             </div>
+                            {selectedRegions.length > 1 && (
+                                <p className="text-[10px] text-gray-500 mt-2">
+                                    {selectedRegions.length} regions run one after another — each one&apos;s PDF
+                                    report is saved into a single folder named after them.
+                                </p>
+                            )}
                         </div>
                     )}
 
@@ -192,12 +290,16 @@ export default function Dashboard({
                             {isRunning ? (
                                 <>
                                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                    Executing...
+                                    {batch && batch.total > 1
+                                        ? `${batch.current || ''} (${Math.min(batch.index + 1, batch.total)}/${batch.total})`
+                                        : 'Executing...'}
                                 </>
                             ) : (
                                 <>
                                     <Play className="w-4 h-4" fill="currentColor" />
-                                    Run Tests
+                                    {!isFlat && selectedRegions.length > 1
+                                        ? `Run ${selectedRegions.length} Regions`
+                                        : 'Run Tests'}
                                 </>
                             )}
                         </button>
@@ -216,8 +318,13 @@ export default function Dashboard({
                     </div>
                 </div>
 
-                {/* Right: Suite Selector + Logs */}
+                {/* Right: Suite Selector + Batch Progress + Logs */}
                 <div className="lg:col-span-7 flex flex-col gap-3 md:gap-4 overflow-hidden">
+
+                    {/* Region queue — only meaningful once a multi-region batch exists */}
+                    {!isFlat && batch && batch.total > 1 && (
+                        <BatchProgress batch={batch} theme={theme} />
+                    )}
 
                     {/* Suite Type (regional only) */}
                     {!isFlat && (
@@ -276,7 +383,9 @@ export default function Dashboard({
                                     {logs.map((log, idx) => (
                                         <div
                                             key={idx}
-                                            className={`${log.type === 'stderr' ? 'text-red-400' : 'text-gray-300'} break-words`}
+                                            className={`${log.type === 'stderr' ? 'text-red-400'
+                                                : log.type === 'info' ? 'text-cyan-400 font-bold'
+                                                    : 'text-gray-300'} break-words whitespace-pre-wrap`}
                                         >
                                             <span className="text-gray-600 mr-2 opacity-70">
                                                 [{new Date(log.timestamp).toLocaleTimeString()}]

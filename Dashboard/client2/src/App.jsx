@@ -35,6 +35,9 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [currentRunId, setCurrentRunId] = useState(null);
 
+  // Batch (multi-region) progress — regions run one after another
+  const [batch, setBatch] = useState(null);
+
   // History / stats state
   const [history, setHistory] = useState([]);
   const [filterStatus, setFilterStatus] = useState('all');
@@ -48,11 +51,17 @@ function App() {
   // Load available projects on mount
   useEffect(() => {
     axios.get('/api/projects')
-      .then(res => setAvailableProjects(res.data))
+      .then(res => {
+        setAvailableProjects(res.data);
+        // The seeded default may not exist server-side — fall back to the first real one.
+        if (res.data.length && !res.data.some(p => p.id === selectedProject.id)) {
+          switchProject(res.data[0]);
+        }
+      })
       .catch(err => console.error('Failed to load projects:', err));
   }, []);
 
-  // Fetch scripts whenever project, region, or suiteType changes
+  // Fetch scripts whenever project, regions, or suiteType changes
   useEffect(() => {
     fetchScripts();
   }, [selectedProject, selectedRegions, selectedEnv, suiteType]);
@@ -60,13 +69,20 @@ function App() {
   const fetchScripts = () => {
     const params = new URLSearchParams({ project: selectedProject.id });
     if (selectedProject.type === 'regional') {
-      params.set('region', selectedRegions[0] || selectedProject.defaultRegion || 'ZA');
+      const regions = selectedRegions.length
+        ? selectedRegions
+        : [selectedProject.defaultRegion || 'ZA'];
+      params.set('regions', regions.join(','));
+      params.set('region', regions[0]);
       params.set('suiteType', suiteType);
     }
     axios.get(`/api/metadata?${params}`)
       .then(res => {
-        setScriptsList(res.data.scripts);
-        setSelectedScripts([]);
+        const list = res.data.scripts || [];
+        setScriptsList(list);
+        // Keep what is still selectable instead of wiping the selection every time a
+        // region is toggled on or off.
+        setSelectedScripts(prev => prev.filter(s => list.includes(s)));
       })
       .catch(err => console.error('Failed to fetch scripts:', err));
   };
@@ -79,6 +95,7 @@ function App() {
     setSelectedScripts([]);
     setSuiteType('smoke');
     setLogs([]);
+    setBatch(null);
     setCurrentViewingRun(null);
     setLatestRun(null);
     fetchHistory(project.id);
@@ -90,10 +107,54 @@ function App() {
     fetchHistory(selectedProject.id);
     fetchLatestRun(selectedProject.id);
 
+    socket.on('batch:start', (data) => {
+      setIsRunning(true);
+      setLogs([]);
+      setBatch({
+        batchId: data.batchId,
+        regions: data.regions || [],
+        total: data.total || (data.regions || []).length,
+        reportFolder: data.reportFolder,
+        index: 0,
+        phase: 'running',
+        current: (data.regions || [])[0] || null,
+        done: [],
+        finished: false,
+      });
+    });
+
+    socket.on('batch:progress', (data) => {
+      setBatch(prev => {
+        if (!prev || prev.batchId !== data.batchId) return prev;
+        const done = data.phase === 'done'
+          ? [...prev.done.filter(d => d.region !== data.region),
+          { region: data.region, status: data.status, pdf: data.pdf }]
+          : prev.done;
+        return { ...prev, index: data.index, current: data.region, phase: data.phase, done };
+      });
+    });
+
+    socket.on('batch:end', (data) => {
+      setIsRunning(false);
+      setBatch(prev => prev && prev.batchId !== data.batchId
+        ? prev
+        : {
+          ...(prev || {}),
+          batchId: data.batchId,
+          reportFolder: data.reportFolder,
+          phase: 'finished',
+          finished: true,
+          stopped: data.stopped,
+          results: data.results || [],
+        });
+      fetchHistory(selectedProject.id);
+      fetchLatestRun(selectedProject.id);
+      setReportKey(Date.now());
+    });
+
     socket.on('execution:start', (data) => {
       setIsRunning(true);
       setCurrentRunId(data.runId);
-      setLogs([]);
     });
 
     socket.on('execution:log', (data) => {
@@ -101,7 +162,6 @@ function App() {
     });
 
     socket.on('execution:end', (data) => {
-      setIsRunning(false);
       fetchHistory(selectedProject.id);
       fetchLatestRun(selectedProject.id);
       if (data.results) setLatestRun(data.results);
@@ -114,6 +174,9 @@ function App() {
     });
 
     return () => {
+      socket.off('batch:start');
+      socket.off('batch:progress');
+      socket.off('batch:end');
       socket.off('execution:start');
       socket.off('execution:log');
       socket.off('execution:end');
@@ -172,6 +235,9 @@ function App() {
     );
   };
 
+  const selectAllRegions = () => setSelectedRegions([...(selectedProject.regions || [])]);
+  const clearAllRegions = () => setSelectedRegions([]);
+
   const toggleScript = (script) => {
     setSelectedScripts(prev =>
       prev.includes(script) ? prev.filter(s => s !== script) : [...prev, script]
@@ -195,14 +261,17 @@ function App() {
     };
 
     if (selectedProject.type === 'regional') {
-      body.region = selectedRegions[0];
+      // Regions run sequentially, in the order they appear in the project config.
+      const ordered = (selectedProject.regions || []).filter(r => selectedRegions.includes(r));
+      body.regions = ordered.length ? ordered : selectedRegions;
+      body.region = body.regions[0];
     } else {
       body.environment = selectedEnv;
     }
 
     axios.post('/api/execute', body)
       .then(res => console.log('Started', res.data))
-      .catch(err => alert('Failed to start: ' + err.message));
+      .catch(err => alert('Failed to start: ' + (err.response?.data?.error || err.message)));
   };
 
   const getStats = () => {
@@ -266,12 +335,15 @@ function App() {
             setSelectedEnv={setSelectedEnv}
             selectedScripts={selectedScripts}
             toggleRegion={toggleRegion}
+            selectAllRegions={selectAllRegions}
+            clearAllRegions={clearAllRegions}
             toggleScript={toggleScript}
             selectAllScripts={selectAllScripts}
             clearAllScripts={clearAllScripts}
             handleRun={handleRun}
             handleStop={handleStop}
             isRunning={isRunning}
+            batch={batch}
             logs={logs}
             logsEndRef={logsEndRef}
             stats={stats}
@@ -281,13 +353,14 @@ function App() {
           />
         )}
 
-        {activeTab === 'stats' && (
+        {/* Statistics temporarily hidden — uncomment to restore */}
+        {/* {activeTab === 'stats' && (
           <Statistics
             run={currentViewingRun}
             latestRun={latestRun}
             onBackToLatest={() => setCurrentViewingRun(latestRun)}
           />
-        )}
+        )} */}
 
         {activeTab === 'history' && (
           <History
@@ -300,7 +373,11 @@ function App() {
         )}
 
         {activeTab === 'reports' && (
-          <Reports reportKey={reportKey} selectedProject={selectedProject} />
+          <Reports
+            reportKey={reportKey}
+            selectedProject={selectedProject}
+            batch={batch}
+          />
         )}
       </div>
     </div>

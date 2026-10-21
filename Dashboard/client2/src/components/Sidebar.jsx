@@ -106,7 +106,8 @@ export default function Sidebar({
                     <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Navigation</span>
                 </div>
                 <NavItem icon={<Monitor size={20} />} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
-                <NavItem icon={<BarChart2 size={20} />} label="Statistics" active={activeTab === 'stats'} onClick={() => setActiveTab('stats')} />
+                {/* Statistics temporarily hidden — uncomment to restore */}
+                {/* <NavItem icon={<BarChart2 size={20} />} label="Statistics" active={activeTab === 'stats'} onClick={() => setActiveTab('stats')} /> */}
                 <NavItem icon={<Clock size={20} />} label="History" active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
                 <NavItem icon={<FileText size={20} />} label="Reports" active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} />
             </nav>

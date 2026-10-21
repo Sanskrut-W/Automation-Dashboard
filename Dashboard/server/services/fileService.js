@@ -2,35 +2,50 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-function generatePdfReport(req, res, port) {
-    const reportUrl = `http://localhost:${port}/report/index.html`;
-    const outputPath = path.join(__dirname, `../../report-${Date.now()}.pdf`); // Save to server root temporarily? Or use temp dir.
-    // Actually server.js logical root was server directory. fileService is in server/services.
-    // So __dirname is server/services.
-    // We want to run print-pdf.js which is in server/
-    const scriptPath = path.resolve(__dirname, '../print-pdf.js');
+const PRINT_SCRIPT = path.resolve(__dirname, '../print-pdf.js');
 
-    // Adjust output path to be in server root for easy cleanup logic
-    const safeOutputPath = path.resolve(__dirname, `../report-${Date.now()}.pdf`);
+// Renders a served HTML report to a PDF on disk. Used both by the "Save as PDF"
+// button and by the batch runner, which archives one PDF per region.
+function renderReportPdf(reportUrl, outputPath) {
+    return new Promise((resolve, reject) => {
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
-    const child = spawn('node', [scriptPath, reportUrl, safeOutputPath], {
-        cwd: path.resolve(__dirname, '..') // Run from server root
-    });
+        const child = spawn('node', [PRINT_SCRIPT, reportUrl, outputPath], {
+            cwd: path.resolve(__dirname, '..')
+        });
 
-    child.stdout.on('data', (data) => console.log(`PDF: ${data}`));
-    child.stderr.on('data', (data) => console.error(`PDF Error: ${data}`));
+        let stderr = '';
+        child.stdout.on('data', d => console.log(`PDF: ${d}`));
+        child.stderr.on('data', d => { stderr += d; console.error(`PDF Error: ${d}`); });
 
-    child.on('close', (code) => {
-        if (code !== 0) {
-            return res.status(500).send('Failed to generate PDF');
-        }
-        const dateStr = new Date().toISOString().split('T')[0];
-        res.download(safeOutputPath, `TestReport_${dateStr}.pdf`, (err) => {
-            if (err) console.error(err);
-            // Cleanup
-            try { fs.unlinkSync(safeOutputPath); } catch (e) { }
+        child.on('error', reject);
+        child.on('close', (code) => {
+            if (code === 0 && fs.existsSync(outputPath)) return resolve(outputPath);
+            reject(new Error(stderr.trim() || `print-pdf exited with code ${code}`));
         });
     });
+}
+
+function reportUrlFor(projectId, port) {
+    return `http://localhost:${port}/report/${projectId}/index.html`;
+}
+
+function generatePdfReport(req, res, port) {
+    const projectId = req.query.project || 'synapse';
+    const outputPath = path.resolve(__dirname, `../report-${Date.now()}.pdf`);
+
+    renderReportPdf(reportUrlFor(projectId, port), outputPath)
+        .then(() => {
+            const dateStr = new Date().toISOString().split('T')[0];
+            res.download(outputPath, `TestReport_${dateStr}.pdf`, (err) => {
+                if (err) console.error(err);
+                try { fs.unlinkSync(outputPath); } catch (e) { }
+            });
+        })
+        .catch(err => {
+            console.error('PDF generation failed:', err.message);
+            if (!res.headersSent) res.status(500).send('Failed to generate PDF');
+        });
 }
 
 function downloadFailedScreenshots(req, res, automationDir) {
@@ -99,6 +114,8 @@ function downloadFailedScreenshots(req, res, automationDir) {
 }
 
 module.exports = {
+    renderReportPdf,
+    reportUrlFor,
     generatePdfReport,
     downloadFailedScreenshots
 };

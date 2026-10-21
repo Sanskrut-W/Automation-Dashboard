@@ -65,12 +65,13 @@ export default function History({ history, filterStatus, setFilterStatus, onView
                                     <td className="p-5 text-gray-400 text-sm truncate max-w-xs" title={run.scripts.join(', ')}>{run.scripts.join(', ')}</td>
                                     <td className="p-5 text-gray-300 text-sm font-mono font-bold">{(run.duration / 1000).toFixed(1)}s</td>
                                     <td className="p-5 flex gap-2">
-                                        <button
+                                        {/* Statistics temporarily hidden — uncomment to restore */}
+                                        {/* <button
                                             onClick={() => onViewStatistics(run.runId)}
                                             className="px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg text-sm font-bold hover:bg-cyan-500/30 transition-colors flex items-center gap-1"
                                         >
                                             <BarChart2 size={14} /> Stats
-                                        </button>
+                                        </button> */}
                                         <button
                                             onClick={() => onRerun(run.runId)}
                                             className="px-3 py-1.5 bg-slate-700/50 text-gray-300 rounded-lg text-sm font-bold hover:bg-white/10 transition-colors flex items-center gap-1"

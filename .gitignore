@@ -32,3 +32,6 @@ playwright-report/
 test-results/
 test-results-*.json
 history.json
+
+# Saved PDF report folders written by the dashboard (one folder per run)
+Dashboard/reports/
